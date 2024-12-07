@@ -1,8 +1,9 @@
 import pandas as pd
 import networkx as nx
-from node2vec import Node2Vec
 from sklearn.metrics.pairwise import cosine_similarity
+from node2vec import Node2Vec
 import matplotlib.pyplot as plt
+
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置为一个支持中文的字体，如"SimHei"
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号'-'显示为方块的问题
 # 读取CSV文件
@@ -39,6 +40,30 @@ for index, row in df.iterrows():
         G.add_edge(row['title'], actor)
 
 
+
+# 提取动画作品节点
+title_nodes = [node for node in G.nodes if G.nodes[node]['node_type'] == 'title']
+# 初始化 Node2Vec 模型，设置合适的参数（可根据实际情况调整）
+node2vec = Node2Vec(G, dimensions=64, walk_length=30, num_walks=200, workers=4)
+# 训练模型得到动画作品节点的向量表示
+model = node2vec.fit(window=10, min_count=1, batch_words=4)
+# 获取所有动画作品节点的向量表示
+title_vectors = {title: model.wv[title] for title in title_nodes}
+print("图嵌入结束")
+# 假设要为动画作品 'title1' 进行推荐（需确保 'title1' 存在于图中）
+def recom(input_title):
+    if input_title in title_nodes:
+        target_vector = title_vectors[input_title].reshape(1, -1)
+        similarities = cosine_similarity(target_vector, list(title_vectors.values()))[0]
+        # 获取相似度排名靠前的其他动画作品
+        sorted_similarities = sorted(enumerate(similarities), key=lambda x: x[1], reverse=True)[1:10]  # 去掉自身（相似度为 1）
+        recommended_titles = [title_nodes[i] for i, _ in sorted_similarities]
+        # 按照rating和num_rating属性进行排序
+        sorted_recommended_titles = sorted(recommended_titles,
+                                           key=lambda x: (-G.nodes[x]['rating'], -G.nodes[x]['num_ratings']))
+        print(f"为动画作品 {input_title} 推荐的其他动画作品（按照评分和评分数量排序）：")
+        for input_title in sorted_recommended_titles:
+            print(f"动画作品：{input_title}，评分：{G.nodes[input_title]['rating']}，评分数量：{G.nodes[input_title]['num_ratings']}")
 def show():
     # 可视化图
     pos = nx.spring_layout(G)  # 使用spring布局算法
@@ -56,33 +81,43 @@ def show():
     plt.text(0, 0, '红色：动画\n蓝色：标签\n绿色：配音演员', fontsize=12, color='black', transform=plt.gca().transAxes, ha='left', va='bottom')
     plt.show()
 
-
-# 设定Node2Vec的参数
-node2vec = Node2Vec(G, dimensions=64, walk_length=30, num_walks=200, workers=4)
-
-# 训练模型
-model = node2vec.fit(window=10, min_count=1, batch_words=4)
-
-# 获取节点嵌入
-embeddings = model.wv
+recom("鬼灭之刃")
 
 
-# 获取所有动画作品的嵌入
-titles = [node for node in G.nodes if G.nodes[node]['node_type'] == 'title']
-title_embeddings = [embeddings[G.nodes[title]['index']] for title in titles]  # 注意：这里需要确保嵌入索引与节点匹配
-
-# 计算相似度矩阵
-similarity_matrix = cosine_similarity(title_embeddings)
 
 
-# 为给定的动画作品推荐相似的作品
-def recommend_titles(title, num_recommendations=5):
-    title_index = titles.index(title)
-    similarities = similarity_matrix[title_index]
-    recommended_indices = similarities.argsort()[::-1][1:num_recommendations + 1]  # 排除自身
-    return [titles[i] for i in recommended_indices]
 
 
-# 示例：为某个动画作品推荐
-recommended_titles = recommend_titles('某动画作品标题', num_recommendations=5)
-print(recommended_titles)
+
+
+# import community as community_louvain
+#
+# # 计算最佳分区（社区划分）
+# partition = community_louvain.best_partition(G)
+#
+# # 为每个节点添加社区属性到图中
+# for node, community_id in partition.items():
+#     G.nodes[node]['community'] = community_id
+#
+# # 统计每个社区的节点数量
+# community_sizes = {}
+# for node in G.nodes():
+#     community_id = G.nodes[node]['community']
+#     if community_id not in community_sizes:
+#         community_sizes[community_id] = 0
+#     community_sizes[community_id] += 1
+#
+# print("社区及其对应的节点数量:", community_sizes)
+#
+# # 可视化社区（简单示例，用不同颜色表示不同社区，这里仅示意，实际可能需更精细调整）
+# import matplotlib.pyplot as plt
+# pos = nx.spring_layout(G)
+# plt.figure(figsize=(10, 8))
+# cmap = plt.get_cmap('viridis', max(community_sizes.keys()) + 1)
+# for node in G.nodes():
+#     community_id = G.nodes[node]['community']
+#     nx.draw_networkx_nodes(G, pos, nodelist=[node], node_color=cmap(community_id), node_size=100)
+# nx.draw_networkx_edges(G, pos, alpha=0.3)
+# nx.draw_networkx_labels(G, pos, font_size=8)
+# plt.title("图的社区划分可视化")
+# plt.show()
