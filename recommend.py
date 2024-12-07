@@ -1,8 +1,8 @@
 import pandas as pd
 import networkx as nx
-
+from node2vec import Node2Vec
+from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
-
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置为一个支持中文的字体，如"SimHei"
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号'-'显示为方块的问题
 # 读取CSV文件
@@ -57,62 +57,32 @@ def show():
     plt.show()
 
 
-# 计算动画之间的相似性
-def compute_similarity(input_G, title1, title2):
-    # 获取两个动画的邻居（标签和演员）
-    neighbors1 = set(input_G.neighbors(title1))
-    neighbors2 = set(input_G.neighbors(title2))
+# 设定Node2Vec的参数
+node2vec = Node2Vec(G, dimensions=64, walk_length=30, num_walks=200, workers=4)
 
-    # 计算共享的邻居数量
-    common_neighbors = neighbors1.intersection(neighbors2)
-    similarity = len(common_neighbors)
+# 训练模型
+model = node2vec.fit(window=10, min_count=1, batch_words=4)
 
-    # 也可以考虑加入权重，比如根据标签或演员的重要性
-    # 这里我们简单地使用数量作为相似性度量
-
-    return similarity
+# 获取节点嵌入
+embeddings = model.wv
 
 
-# 根据相似性进行推荐
-def recommend_animations(G, input_title, num_recommendations=10):
-    # 获取输入动画的节点信息
-    input_node = input_title
-    if input_node not in G.nodes:
-        raise ValueError(f"Animation '{input_title}' not found in the graph.")
+# 获取所有动画作品的嵌入
+titles = [node for node in G.nodes if G.nodes[node]['node_type'] == 'title']
+title_embeddings = [embeddings[G.nodes[title]['index']] for title in titles]  # 注意：这里需要确保嵌入索引与节点匹配
 
-    # 计算所有其他动画与输入动画的相似性
-    similarities = {}
-    for title in G.nodes:
-        if title != input_node and G.nodes[title]['node_type'] == 'title':
-            sim = compute_similarity(G, input_node, title)
-            similarities[title] = sim
-
-    # 根据相似性和评分对动画进行排序
-    # 我们先按相似性排序，如果相似性相同，则按rating降序，再按num_ratings降序
-    sorted_animations = sorted(similarities.items(), key=lambda item: (
-    -item[1], -G.nodes[item[0]]['rating'], -G.nodes[item[0]]['num_ratings']))
-
-    # 提取前num_recommendations个动画
-    recommendations = sorted_animations[:num_recommendations]
-
-    # 准备推荐结果
-    rec_list = []
-    for title, sim in recommendations:
-        rec_dict = {
-            'title': title,
-            'similarity': sim,
-            'rating': G.nodes[title]['rating'],
-            'num_ratings': G.nodes[title]['num_ratings']
-        }
-        rec_list.append(rec_dict)
-
-    return rec_list
+# 计算相似度矩阵
+similarity_matrix = cosine_similarity(title_embeddings)
 
 
-# 示例使用
-input_animation = '愤怒的审判'
-recommendations = recommend_animations(G, input_animation)
-for rec in recommendations:
-    print(
-        f"Recommended Animation: {rec['title']}, Similarity: {rec['similarity']}, Rating: {rec['rating']}, Num Ratings: {rec['num_ratings']}")
-# show()
+# 为给定的动画作品推荐相似的作品
+def recommend_titles(title, num_recommendations=5):
+    title_index = titles.index(title)
+    similarities = similarity_matrix[title_index]
+    recommended_indices = similarities.argsort()[::-1][1:num_recommendations + 1]  # 排除自身
+    return [titles[i] for i in recommended_indices]
+
+
+# 示例：为某个动画作品推荐
+recommended_titles = recommend_titles('某动画作品标题', num_recommendations=5)
+print(recommended_titles)
